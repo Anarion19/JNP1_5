@@ -8,6 +8,8 @@
 #include <vector>
 #include <exception>
 #include <memory>
+#include <map>
+#include <iostream>
 
 class PublicationAlreadyCreated : std::exception {
     const char *what() const noexcept {
@@ -30,21 +32,19 @@ class TriedToRemoveRoot : std::exception {
 template<class Publication>
 class CitationGraph {
 public:
-    CitationGraph(typename Publication::id_type const &stem_id) noexcept : root(std::make_shared(Publication(stem_id))) {}
+    CitationGraph(typename Publication::id_type const &stem_id) noexcept;
 
-    CitationGraph(CitationGraph<Publication> &&other) : root(std::move(other.root)) {}
+    CitationGraph(CitationGraph<Publication> &&other) noexcept : root(std::move(other.root)), graph(std::move(other.graph)) {}
 
     CitationGraph(CitationGraph<Publication> &other) = delete;
-
-    ~CitationGraph() { root.reset(); }
 
     CitationGraph<Publication> &operator=(CitationGraph<Publication> &other) = delete;
 
     CitationGraph<Publication> &operator=(CitationGraph<Publication> &&other) noexcept;
 
     Publication &operator[](typename Publication::id_type const &id) const;
-
-    typename Publication::id_type get_root_id() const noexcept(noexcept(Publication::get_id()));
+    //TODO nie działa
+    typename Publication::id_type get_root_id() const;
 
     std::vector<typename Publication::id_type> get_children(typename Publication::id_type const &id) const;
 
@@ -65,42 +65,44 @@ private:
     private:
         Publication publication;
         // Publickacje które ją cytują.
-        std::vector<std::shared_ptr<Node> > citations;
+        std::vector<std::shared_ptr<Node>> parents;
+        std::vector<std::shared_ptr<Node>> children;
     public:
         Node(Publication publication) : publication(publication) {}
 
-        void add_child(std::shared_ptr<Node> another) { citations.emplace_back(another); }
+        void add_child(std::shared_ptr<Node> another) { children.emplace_back(another); }
+        void add_parent(std::shared_ptr<Node> another) { parents.emplace_back(another); }
 
         typename Publication::id_type getStem_id() const { return publication.get_id(); }
 
         Publication getPublication() const { return publication; }
 
-        const std::vector<std::shared_ptr<Node> > &getCitations() const { return citations; }
+        const std::vector<std::shared_ptr<Node> > &getParensts() const { return parents; }
 
-        // Znalezienie publikacji w grafie. Jeśli nie istnieje zwraca nullptr.
-        std::shared_ptr<Node> find(typename Publication::id_type id) noexcept;
+        const std::vector<std::shared_ptr<Node> > &getChildren() const { return children; }
     };
 
     std::shared_ptr<Node> root;
+    std::map<typename Publication::id_type, std::shared_ptr<Node>> graph;
 };
 
 template<class Publication>
-typename Publication::id_type CitationGraph<Publication>::get_root_id() const noexcept(noexcept(Publication::get_id())) {
+typename Publication::id_type CitationGraph<Publication>::get_root_id() const {
     //TODO jakiś try/catch?
-    return root->getStem_id();
+    return root -> getStem_id();
 }
 
 template<class Publication>
 std::vector<typename Publication::id_type> CitationGraph<Publication>::get_parents(const typename Publication::id_type &id) const {
-    std::shared_ptr<Node> node = root->find(id);
+    auto node = graph.find(id);
 
-    if (node.get() == nullptr) {
+    if (node == graph.end()) {
         throw PublicationNotFound();
     } else {
         std::vector<typename Publication::id_type> out;
 
-        for (auto it : node->getCitations()) {
-            out.push_back(it->get_id());
+        for (auto it : node -> second -> getParensts()) {
+            out.push_back(it.get() -> getStem_id());
         }
 
         return out;
@@ -109,23 +111,20 @@ std::vector<typename Publication::id_type> CitationGraph<Publication>::get_paren
 
 template<class Publication>
 bool CitationGraph<Publication>::exists(const typename Publication::id_type &id) const {
-    if (root->find(id).get() == nullptr) {
-        return false;
-    } else {
-        return true;
-    }
+    return !(graph.find(id) == graph.end());
 }
 
 template<class Publication>
 void CitationGraph<Publication>::add_citation(const typename Publication::id_type &child_id,
                                               const typename Publication::id_type &parent_id) {
-    std::shared_ptr<Node> parent = root->find(parent_id);
+    auto parent = graph.find(parent_id);
 
-    if (parent.get() != nullptr) {
-        std::shared_ptr<Node> child = root->find(child_id);
+    if (parent != graph.end()) {
+        auto child = graph.find(child_id);
 
-        if (child.get() != nullptr) {
-            parent->add_child(child);
+        if (child != graph.end()) {
+            parent-> second -> add_child(child -> second);
+            child-> second -> add_parent(parent -> second);
         } else {
             throw PublicationNotFound();
         }
@@ -136,10 +135,10 @@ void CitationGraph<Publication>::add_citation(const typename Publication::id_typ
 
 template<class Publication>
 Publication &CitationGraph<Publication>::operator[](const typename Publication::id_type &id) const {
-    std::shared_ptr<Node> publication = root->find(id);
+    auto publication = graph.find(id);
 
-    if (publication.get() != nullptr) {
-        return publication->getPublication();
+    if (publication != graph.end()) {
+        return publication-> second -> getPublication();
     } else {
         throw PublicationNotFound();
     }
@@ -148,34 +147,73 @@ Publication &CitationGraph<Publication>::operator[](const typename Publication::
 
 template<class Publication>
 void CitationGraph<Publication>::create(const typename Publication::id_type &id, const typename Publication::id_type &parent_id) {
-    if(root -> find(id).get() != nullptr) { throw PublicationAlreadyCreated(); }
+    if(graph.find(id) != graph.end()) { throw PublicationAlreadyCreated(); }
+    std::shared_ptr<Node> child = std::make_shared<Node>(id);
+    auto parent = graph.find(parent_id);
 
-    std::shared_ptr<Node> parent = root -> find(parent_id);
-
-    if(parent.get() == nullptr) { throw PublicationNotFound(); }
+    if(parent == graph.end()) { throw PublicationNotFound(); }
     else{
-        parent -> add_child(std::make_shared(Publication(id)));
+        child -> add_parent(parent -> second);
+        graph[id] = child;
+        parent-> second -> add_child(std::make_shared<Node>(Publication(id)));
     }
 }
 
 template<class Publication>
 void CitationGraph<Publication>::create(const typename Publication::id_type &id, const std::vector<typename Publication::id_type> &parent_ids) {
-    if(root -> find(id).get() != nullptr) { throw PublicationAlreadyCreated(); }
-
+    if(graph.find(id) != graph.end()) { throw PublicationAlreadyCreated(); }
+    std::shared_ptr<Node> child = std::make_shared<Node>(id);
     std::vector<std::shared_ptr<Node>> parents;
 
     for(auto & it : parent_ids) {
-        std::shared_ptr<Node> parent = root -> find(it);
-
-        if(parent.get() == nullptr) { throw PublicationNotFound(); }
+        auto parent = graph.find(it);
+        // Sprawdzenie czy wszyscy rodzice istnieją.
+        if(parent == graph.end()) { throw PublicationNotFound(); }
         else{
-            parents.emplace_back(parent);
+            parents.emplace_back(parent -> second);
         }
     }
-
+    graph[id] = child;
     // Jak nie rzuciło do dej pory wyjątku to można bezpiecznie dodać.
     for(auto & it : parents) {
-        it -> add_child(std::make_shared(Publication(id)));
+        child -> add_parent(it);
+        it.add_child(child);
+    }
+}
+
+template<class Publication>
+CitationGraph<Publication>::CitationGraph(const typename Publication::id_type &stem_id) noexcept
+{
+    root = std::make_shared<Node>(Publication(stem_id));
+    graph[stem_id] = root;
+}
+
+template<class Publication>
+std::vector<typename Publication::id_type> CitationGraph<Publication>::get_children(const typename Publication::id_type &id) const {
+    auto node = graph.find(id);
+
+    if (node == graph.end()) {
+        throw PublicationNotFound();
+    } else {
+        std::vector<typename Publication::id_type> out;
+
+        for (auto it : node-> second -> getChildren()) {
+            out.push_back(it.get() -> getStem_id());
+        }
+
+        return out;
+    }
+}
+//TODO wyszukiwanie i zwolnienie wskaźników na id
+template<class Publication>
+void CitationGraph<Publication>::remove(const typename Publication::id_type &id) {
+    auto item = graph.find(id);
+
+    if(item == graph.end()) {
+        throw PublicationNotFound();
+    } else{
+        if(item -> second -> getStem_id == root -> getStem_id()) { throw TriedToRemoveRoot(); }
+        graph.erase(item -> second);
     }
 }
 
