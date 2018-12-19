@@ -75,7 +75,7 @@ private:
 
         typename Publication::id_type getStem_id() const { return publication.get_id(); }
 
-        Publication getPublication() const { return publication; }
+        const Publication& getPublication() const { return publication; }
 
         const std::vector<std::shared_ptr<Node> > &getParensts() const { return parents; }
 
@@ -132,7 +132,7 @@ void CitationGraph<Publication>::add_citation(const typename Publication::id_typ
         throw PublicationNotFound();
     }
 }
-
+//TODO jest problem z przekazywaniem z getPublication()
 template<class Publication>
 Publication &CitationGraph<Publication>::operator[](const typename Publication::id_type &id) const {
     auto publication = graph.find(id);
@@ -177,7 +177,7 @@ void CitationGraph<Publication>::create(const typename Publication::id_type &id,
     // Jak nie rzuciło do dej pory wyjątku to można bezpiecznie dodać.
     for(auto & it : parents) {
         child -> add_parent(it);
-        it.add_child(child);
+        it -> add_child(child);
     }
 }
 
@@ -212,8 +212,8 @@ void CitationGraph<Publication>::remove(const typename Publication::id_type &id)
     if(item == graph.end()) {
         throw PublicationNotFound();
     } else{
-        if(item -> second -> getStem_id == root -> getStem_id()) { throw TriedToRemoveRoot(); }
-        graph.erase(item -> second);
+        if(item -> second -> getStem_id() == root -> getStem_id()) { throw TriedToRemoveRoot(); }
+        graph.erase(item);
     }
 }
 
