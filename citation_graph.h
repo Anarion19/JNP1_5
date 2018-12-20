@@ -44,7 +44,6 @@ public:
 
     Publication &operator[](typename Publication::id_type const &id) const;
 
-    //TODO nie działa
     typename Publication::id_type get_root_id() const noexcept(noexcept(std::declval<Publication>().get_id()));
 
     std::vector<typename Publication::id_type> get_children(typename Publication::id_type const &id) const;
@@ -69,6 +68,7 @@ private:
         std::set<std::shared_ptr<Node>> parents;
         std::set<std::shared_ptr<Node>> children;
         int point;
+        bool visited = 0;
     public:
         Node(Publication publication) : publication(publication) {
             static int i = 0;
@@ -80,34 +80,30 @@ private:
 
         void add_parent(std::shared_ptr<Node> another) { parents.insert(parents.begin(), another); }
 
+        void remove_child(std::shared_ptr<Node> & another) { children.erase(another); }
+
         typename Publication::id_type getStem_id() const { return publication.get_id(); }
 
         const Publication &getPublication() const { return publication; }
 
-        int getPoint() const { return point; }
+        bool is_visited() const { return visited; }
 
         const std::set<std::shared_ptr<Node> > &getParensts() const { return parents; }
 
         const std::set<std::shared_ptr<Node> > &getChildren() const { return children; }
 
-        bool isOrphan() const { return parents.empty(); }
-
-        void clear() {
-            parents.clear();
-            children.clear();
-        }
-
         void visit() {
-            if (point > 0) {
-                point *= -1;
-
+            if (visited == 0) {
+                visited = 1;
                 for (auto &it : children) {
-                    it->second.visit();
+                    if(it.get() != nullptr) {
+                        it.get()->visit();
+                    }
                 }
             }
         }
 
-        void reset() { point *= -1; }
+        void reset() { visited = 0; }
 
         bool operator<(const Node &b) { return point < b.point; }
     };
@@ -248,21 +244,23 @@ void CitationGraph<Publication>::remove(const typename Publication::id_type &id)
     } else {
         if (item->second->getStem_id() == root->getStem_id()) { throw TriedToRemoveRoot(); }
 
-        item->second->clear();
+        for(auto &it : item -> second -> getParensts())
+        {
+            it -> remove_child(item -> second);
+        }
         graph.erase(item);
 
         root->visit();
 
-        for (auto &it : graph) {
-            if (it->second->getPoint() > 0) {
-                it->second->clear();
+        for (auto it = graph.cbegin(); it != graph.cend();) {
+            if (it->second->is_visited() == 1) {
+
                 it = graph.erase(it);
-                it--;
             } else {
-                it->second->reset();
+                it -> second -> reset();
+                it++;
             }
         }
-
     }
 }
 
