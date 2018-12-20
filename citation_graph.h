@@ -64,7 +64,7 @@ private:
     class Node {
     private:
         Publication publication;
-        // Publickacje które ją cytują.
+
         std::set<std::shared_ptr<Node>> parents;
         std::set<std::shared_ptr<Node>> children;
         int point;
@@ -80,7 +80,7 @@ private:
 
         void add_parent(std::shared_ptr<Node> another) { parents.insert(parents.begin(), another); }
 
-        void remove_child(std::shared_ptr<Node> & another) { children.erase(another); }
+        void remove_child(std::shared_ptr<Node> &another) { children.erase(another); }
 
         typename Publication::id_type getStem_id() const { return publication.get_id(); }
 
@@ -91,18 +91,20 @@ private:
         const std::set<std::shared_ptr<Node> > &getParensts() const { return parents; }
 
         const std::set<std::shared_ptr<Node> > &getChildren() const { return children; }
-
+        // Visits all nodes that origin from this node.
         void visit() {
             if (visited == 0) {
                 visited = 1;
-                for (auto &it : children) {
-                    if(it.get() != nullptr) {
+                //TODO z jakiegoś powodu nie zmienia zawartości seta!!!!!!!!!!!.
+                for (auto & it : children) {
+                    if (it.get() != nullptr) {
                         it.get()->visit();
                     }
                 }
+                std::cout << std::endl;
             }
         }
-
+        // Marks as unvisited.
         void reset() { visited = 0; }
 
         bool operator<(const Node &b) { return point < b.point; }
@@ -234,7 +236,6 @@ CitationGraph<Publication>::get_children(const typename Publication::id_type &id
     }
 }
 
-//TODO u mnie rzuca się że nie działa a powinno bo reszta jest tak napisana i kurwa działa
 template<class Publication>
 void CitationGraph<Publication>::remove(const typename Publication::id_type &id) {
     auto item = graph.find(id);
@@ -244,22 +245,21 @@ void CitationGraph<Publication>::remove(const typename Publication::id_type &id)
     } else {
         if (item->second->getStem_id() == root->getStem_id()) { throw TriedToRemoveRoot(); }
 
-        for(auto &it : item -> second -> getParensts())
-        {
-            it -> remove_child(item -> second);
+        for (auto &it : item->second->getParensts()) {
+            it->remove_child(item->second);
         }
         graph.erase(item);
-
+        // Tests if graph is consistent.
         root->visit();
-
-        for (auto it = graph.cbegin(); it != graph.cend();) {
-            if (it->second->is_visited() == 1) {
-
-                it = graph.erase(it);
-            } else {
-                it -> second -> reset();
-                it++;
-            }
+        for (auto it = graph.cbegin(); it != graph.cend(); it++) {
+            std::cout << it->second->getStem_id() << it->second->is_visited() << std::endl;
+            // If node hasn't been visited, it must be unaccesible from the root.
+//            if (it->second->is_visited() == 0) {
+//
+//                it = graph.erase(it);
+//            } else {
+//                it++;
+//            }
         }
     }
 }
